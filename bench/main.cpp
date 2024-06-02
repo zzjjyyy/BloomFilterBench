@@ -8,9 +8,8 @@
 using namespace arrow::compute;
 
 enum SimdOption {
-  NONE,
-  AVX2,
-  AVX512
+  Scalar,
+  AVX2
 };
 
 static constexpr int ITER = 3;
@@ -37,10 +36,10 @@ void makeProbeInput(int64_t build_num, uint64_t* build_hashes, int64_t probe_num
 
 std::shared_ptr<BlockedBloomFilter> build(int64_t num, const uint64_t* hashes, SimdOption simdOption) {
   int hardware_flags = arrow::internal::CpuInfo::GetInstance()->hardware_flags();
-  if (simdOption == NONE) {
+  if (simdOption == Scalar) {
     hardware_flags = 0;
   } else if (simdOption == AVX2) {
-    hardware_flags &= ~arrow::internal::CpuInfo::AVX512;
+    hardware_flags |= arrow::internal::CpuInfo::AVX2;
   }
   auto builder = BloomFilterBuilder::Make(BloomFilterBuildStrategy::SINGLE_THREADED);
   auto bf = std::make_shared<BlockedBloomFilter>();
@@ -52,46 +51,36 @@ std::shared_ptr<BlockedBloomFilter> build(int64_t num, const uint64_t* hashes, S
 void probe(const std::shared_ptr<BlockedBloomFilter> &bf, int64_t num, const uint64_t* hashes,
            uint8_t* out, SimdOption simdOption) {
   int hardware_flags = arrow::internal::CpuInfo::GetInstance()->hardware_flags();
-  if (simdOption == NONE) {
+  if (simdOption == Scalar) {
     hardware_flags = 0;
   } else if (simdOption == AVX2) {
-    hardware_flags &= ~arrow::internal::CpuInfo::AVX512;
+    hardware_flags |= arrow::internal::CpuInfo::AVX2;
   }
   bf->Find(hardware_flags, num, hashes, out, false);
 }
 
 void runBuild(int64_t num, const uint64_t* hashes) {
   ankerl::nanobench::Config().minEpochIterations(ITER).run(
-          fmt::format("[SIMD OFF] bf-build-{}-hashes", num), [&] {
-            build(num, hashes, NONE);
+          fmt::format("[Scalar] bf-build-{}-hashes", num), [&] {
+            build(num, hashes, Scalar);
           });
 
   ankerl::nanobench::Config().minEpochIterations(ITER).run(
           fmt::format("[AVX-2] bf-build-{}-hashes", num), [&] {
             build(num, hashes, AVX2);
           });
-
-  ankerl::nanobench::Config().minEpochIterations(ITER).run(
-          fmt::format("[AVX-512] bf-build-{}-hashes", num), [&] {
-            build(num, hashes, AVX512);
-          });
 }
 
 void runProbe(int64_t num_build, const std::shared_ptr<BlockedBloomFilter> &bf,
               int64_t num_probe, const uint64_t* probe_hashes, uint8_t* out) {
   ankerl::nanobench::Config().minEpochIterations(ITER).run(
-          fmt::format("[SIMD OFF] bf-probe-{}-hashes (build={})", num_probe, num_build), [&] {
-            probe(bf, num_probe, probe_hashes, out, NONE);
+          fmt::format("[Scalar] bf-probe-{}-hashes (build={})", num_probe, num_build), [&] {
+            probe(bf, num_probe, probe_hashes, out, Scalar);
           });
 
   ankerl::nanobench::Config().minEpochIterations(ITER).run(
           fmt::format("[AVX-2] bf-probe-{}-hashes (build={})", num_probe, num_build), [&] {
             probe(bf, num_probe, probe_hashes, out, AVX2);
-          });
-
-  ankerl::nanobench::Config().minEpochIterations(ITER).run(
-          fmt::format("[AVX-512] bf-probe-{}-hashes (build={})", num_probe, num_build), [&] {
-            probe(bf, num_probe, probe_hashes, out, AVX512);
           });
 }
 
@@ -114,7 +103,7 @@ int main() {
   // probe (num-build = 10000)
   printf("\nBench bf-probe (num-build = 10000):\n");
   // data
-  auto bf1 = build(nums[2], build_data[2], NONE);
+  auto bf1 = build(nums[2], build_data[2], Scalar);
   const double sel = 0.1;
   uint64_t *probe_data1[num_tests];
   for (int i = 0; i < num_tests; ++i) {
@@ -131,7 +120,7 @@ int main() {
   // probe (num-build = 10000000)
   printf("\nBench bf-probe (num-build = 10000000):\n");
   // data
-  auto bf2 = build(nums[4], build_data[4], NONE);
+  auto bf2 = build(nums[4], build_data[4], Scalar);
   uint64_t *probe_data2[num_tests];
   for (int i = 0; i < num_tests; ++i) {
     probe_data2[i] = new uint64_t[nums[i]];

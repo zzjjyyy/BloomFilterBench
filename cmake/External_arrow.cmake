@@ -1,7 +1,7 @@
 include(GNUInstallDirs)
 
 # This repo is forked from Arrow repo
-set(ARROW_VERSION "main")
+set(ARROW_VERSION "release-8.0.0")
 set(ARROW_GIT_URL "git@github.com:zzjjyyy/arrow")
 
 
